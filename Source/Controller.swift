@@ -68,7 +68,7 @@ public class Controller {
         var zContOffset: CGFloat
     }
     
-    struct GyroContCalibration {
+    public struct GyroContCalibration {
         var dt: Int
         var numWindows: Int
         var frontIndex: Int
@@ -199,7 +199,7 @@ public class Controller {
     
     let dt: Int = 15
     
-    var gyroContCalibration: GyroContCalibration = GyroContCalibration(
+    public var gyroContCalibration: GyroContCalibration = GyroContCalibration(
         dt: 15,
         numWindows: 16,
         frontIndex: 0,
