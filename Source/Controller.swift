@@ -62,6 +62,10 @@ public class Controller {
         var xOffset: CGFloat
         var yOffset: CGFloat
         var zOffset: CGFloat
+        
+        var xContOffset: CGFloat
+        var yContOffset: CGFloat
+        var zContOffset: CGFloat
     }
     
     struct GyroContCalibration {
@@ -106,7 +110,7 @@ public class Controller {
             window.z += z
         }
         
-        func getAverage(x: CGFloat, y: CGFloat, z: CGFloat) -> (CGFloat, CGFloat, CGFloat) {
+        func getAverage() -> SCNVector3? {
             var weight: CGFloat = 0.0
             var totalX: CGFloat = 0.0
             var totalY: CGFloat = 0.0
@@ -140,12 +144,12 @@ public class Controller {
                 weight += thisWeight
             }
             if weight > 0.0 {
-                let newX = totalX / weight
-                let newY = totalY / weight
-                let newZ = totalZ / weight
-                return (newX, newY, newZ)
+                let x = totalX / weight
+                let y = totalY / weight
+                let z = totalZ / weight
+                return SCNVector3(x: x, y: y, z: z)
             }
-            return (x, y, z)
+            return nil
         }
     }
     
@@ -382,27 +386,39 @@ public class Controller {
     
     func readSensorData(value: IOHIDValue) {
         let ptr = IOHIDValueGetBytePtr(value)
+        
+        let (acc1, gyro1) = self.readSensorData(at: ptr + 12)
+        let (acc2, gyro2) = self.readSensorData(at: ptr + 24)
+        let (acc3, gyro3) = self.readSensorData(at: ptr + 36)
+        
+        self.acceleration.x = (acc1.x + acc2.x + acc3.x) / 3
+        self.acceleration.y = (acc1.y + acc2.y + acc3.y) / 3
+        self.acceleration.z = (acc1.z + acc2.z + acc3.z) / 3
 
-        if self.sensorHandler != nil {
-            self.readSensorData(at: ptr + 12)
-            self.readSensorData(at: ptr + 24)
-        }
-        self.readSensorData(at: ptr + 36)
+        self.gyro.x = (gyro1.x + gyro2.x + gyro3.x) / 3
+        self.gyro.y = (gyro1.y + gyro2.y + gyro3.y) / 3
+        self.gyro.z = (gyro1.z + gyro2.z + gyro3.z) / 3
+        
+        self.sensorHandler?()
     }
     
-    func readSensorData(at ptr: UnsafePointer<UInt8>) {
+    func readSensorData(at ptr: UnsafePointer<UInt8>) -> (acc: SCNVector3, gyro: SCNVector3) {
+        var acc: SCNVector3 = SCNVector3()
+        var gyro: SCNVector3 = SCNVector3()
+        
         let axInt = ReadInt16(from: ptr)
         let ayInt = ReadInt16(from: ptr + 2)
         let azInt = ReadInt16(from: ptr + 4)
         
+        
         if let cal = self.accCalibration {
-            self.acceleration.x = (CGFloat(axInt) - cal.xOffset) * cal.xCoeff
-            self.acceleration.y = (CGFloat(ayInt) - cal.yOffset) * cal.yCoeff
-            self.acceleration.z = (CGFloat(azInt) - cal.zOffset) * cal.zCoeff + 1.0
+            acc.x = (CGFloat(axInt) - cal.xOffset) * cal.xCoeff
+            acc.y = (CGFloat(ayInt) - cal.yOffset) * cal.yCoeff
+            acc.z = (CGFloat(azInt) - cal.zOffset) * cal.zCoeff + 1.0
         } else {
-            self.acceleration.x = CGFloat(axInt) * 0.000244
-            self.acceleration.y = CGFloat(ayInt) * 0.000244
-            self.acceleration.z = CGFloat(azInt) * 0.000244
+            acc.x = CGFloat(axInt) * 0.000244
+            acc.y = CGFloat(ayInt) * 0.000244
+            acc.z = CGFloat(azInt) * 0.000244
         }
         
         let rxInt = ReadInt16(from: ptr + 6)
@@ -410,16 +426,16 @@ public class Controller {
         let rzInt = ReadInt16(from: ptr + 10)
         
         if let cal = self.gyroCalibration {
-            self.gyro.x = (CGFloat(rxInt) - cal.xOffset) * cal.xCoeff
-            self.gyro.y = (CGFloat(ryInt) - cal.yOffset) * cal.yCoeff
-            self.gyro.z = (CGFloat(rzInt) - cal.zOffset) * cal.zCoeff
+            gyro.x = (CGFloat(rxInt) - cal.xOffset) * cal.xCoeff
+            gyro.y = (CGFloat(ryInt) - cal.yOffset) * cal.yCoeff
+            gyro.z = (CGFloat(rzInt) - cal.zOffset) * cal.zCoeff
         } else {
-            self.gyro.x = CGFloat(rxInt) * 0.06103
-            self.gyro.y = CGFloat(ryInt) * 0.06103
-            self.gyro.z = CGFloat(rzInt) * 0.06103
+            gyro.x = CGFloat(rxInt) * 0.06103
+            gyro.y = CGFloat(ryInt) * 0.06103
+            gyro.z = CGFloat(rzInt) * 0.06103
         }
-
-        self.sensorHandler?()
+        
+        return (acc: acc, gyro: gyro)
     }
     
     func readNFCData(value: IOHIDValue) {
@@ -867,7 +883,10 @@ public class Controller {
                     zCoeff: 936.0 / (gyroZSensitivity - gyroZOffset),
                     xOffset: gyroXOffset,
                     yOffset: gyroYOffset,
-                    zOffset: gyroZOffset
+                    zOffset: gyroZOffset,
+                    xContOffset: gyroXOffset,
+                    yContOffset: gyroYOffset,
+                    zContOffset: gyroZOffset
                 )
             }
         }
@@ -929,7 +948,10 @@ public class Controller {
                     zCoeff: 936.0 / (gyroZSensitivity - gyroZOffset),
                     xOffset: gyroXOffset,
                     yOffset: gyroYOffset,
-                    zOffset: gyroZOffset
+                    zOffset: gyroZOffset,
+                    xContOffset: gyroXOffset,
+                    yContOffset: gyroYOffset,
+                    zContOffset: gyroZOffset
                 )
             }
         }
