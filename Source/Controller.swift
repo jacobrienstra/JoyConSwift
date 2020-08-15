@@ -64,6 +64,92 @@ public class Controller {
         var zOffset: CGFloat
     }
     
+    struct GyroContCalibration {
+        var dt: Int
+        var numWindows: Int
+        var frontIndex: Int
+        var windowLength: Int // in seconds
+        var windows: [GyroAveragingWindow]
+        
+        struct GyroAveragingWindow {
+            var x: CGFloat = 0
+            var y: CGFloat = 0
+            var z: CGFloat = 0
+            var numSamples: Int = 0
+        }
+        
+        mutating func resetContCalibration() {
+            for i in 0...self.numWindows {
+                self.windows[i] = GyroAveragingWindow()
+            }
+        }
+        
+        func getNumTotalSamples() -> Int { // dt in ms
+            return Int(round(1000.0 / CGFloat(self.dt) * CGFloat(self.windowLength)))
+        }
+        
+        func getNumSingleSamples() -> Int {
+            return Int(self.getNumTotalSamples() / self.numWindows - 2)
+        }
+        
+        mutating func pushSensorSamples(x: CGFloat, y: CGFloat, z: CGFloat) {
+            var window = self.windows[self.frontIndex]
+            if window.numSamples >= self.getNumSingleSamples() {
+                // next
+                self.frontIndex = (self.frontIndex + self.numWindows - 1) % self.numWindows
+                self.windows[self.frontIndex] = GyroAveragingWindow()
+                window = self.windows[self.frontIndex]
+            }
+            window.numSamples += 1
+            window.x += x
+            window.y += y
+            window.z += z
+        }
+        
+        func getAverage(x: CGFloat, y: CGFloat, z: CGFloat) -> (CGFloat, CGFloat, CGFloat) {
+            var weight: CGFloat = 0.0
+            var totalX: CGFloat = 0.0
+            var totalY: CGFloat = 0.0
+            var totalZ: CGFloat = 0.0
+            var samplesWanted: Int = self.getNumTotalSamples()
+            let samplesPerWindow: CGFloat = CGFloat(self.getNumSingleSamples())
+            
+            // get the average of each window
+            // and a weighted average of all those averages, weighted by the number of samples it has compared to how many samples a full window will have.
+            // this isn't a perfect rolling average. the last window, which has more samples than we need, will have its contribution weighted according to how many samples it would ideally have for the current span of time.
+           
+            for i in 0..<self.numWindows {
+                if (samplesWanted == 0) { break }
+                let cycledIndex: Int = (i + self.frontIndex) % self.numWindows
+                let window = self.windows[cycledIndex]
+                if window.numSamples == 0 {
+                    continue;
+                }
+                var thisWeight: CGFloat = 1.0
+                if (samplesWanted < window.numSamples) {
+                    thisWeight = CGFloat(samplesWanted) / CGFloat(window.numSamples)
+                    samplesWanted = 0
+                } else {
+                    thisWeight = CGFloat(window.numSamples) / samplesPerWindow
+                    samplesWanted -= window.numSamples
+                }
+                
+                totalX += window.x / CGFloat(window.numSamples) * thisWeight
+                totalY += window.y / CGFloat(window.numSamples) * thisWeight
+                totalZ += window.z / CGFloat(window.numSamples) * thisWeight
+                weight += thisWeight
+            }
+            if weight > 0.0 {
+                let newX = totalX / weight
+                let newY = totalY / weight
+                let newZ = totalZ / weight
+                return (newX, newY, newZ)
+            }
+            return (x, y, z)
+        }
+    }
+    
+    
     let device: IOHIDDevice
     /// Serial ID of the controller
     public let serialID: String
@@ -106,6 +192,16 @@ public class Controller {
             return self.gyroUserCalibration ?? self.gyroFactoryCalibration
         }
     }
+    
+    let dt: Int = 15
+    
+    var gyroContCalibration: GyroContCalibration = GyroContCalibration(
+        dt: 15,
+        numWindows: 16,
+        frontIndex: 0,
+        windowLength: 600,
+        windows: []
+    )
 
     /// Controller type
     public var type: JoyCon.ControllerType {
@@ -726,6 +822,7 @@ public class Controller {
             )
         }
     }
+    
     
     func readSensorCalibration() {
         // Factory calibration
